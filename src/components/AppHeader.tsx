@@ -1,41 +1,59 @@
 import React from 'react';
 import { Appbar } from 'react-native-paper';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../types';
+import { useNavigation } from '@react-navigation/native';
 
 interface AppHeaderProps {
-  navigation: StackNavigationProp<RootStackParamList>;
   title: string;
-  showBack?: boolean;
+  showBackButton?: boolean;
+  showNotifications?: boolean;
+  showProfile?: boolean;
+  rightActions?: React.ReactNode;
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({ 
-  navigation, 
   title, 
-  showBack = false 
+  showBackButton = false,
+  showNotifications = true,
+  showProfile = true,
+  rightActions
 }) => {
+  const navigation = useNavigation();
+
   const handleProfilePress = () => {
-    navigation.navigate('Profile');
+    navigation.navigate('Profile' as never);
   };
 
   const handleNotificationsPress = () => {
-    navigation.navigate('Notifications'); // FIXED: Now navigates to NotificationScreen
+    navigation.navigate('Notifications' as never);
   };
 
   return (
     <Appbar.Header>
-      {showBack ? (
+      {/* Back Button */}
+      {showBackButton && (
         <Appbar.BackAction onPress={() => navigation.goBack()} />
-      ) : null}
+      )}
+      
+      {/* Title */}
       <Appbar.Content title={title} />
-      <Appbar.Action 
-        icon="bell-outline" 
-        onPress={handleNotificationsPress} 
-      />
-      <Appbar.Action 
-        icon="account-circle" 
-        onPress={handleProfilePress} 
-      />
+      
+      {/* Custom Right Actions */}
+      {rightActions}
+      
+      {/* Default Right Actions */}
+      {showNotifications && (
+        <Appbar.Action 
+          icon="bell-outline" 
+          onPress={handleNotificationsPress} 
+        />
+      )}
+      
+      {showProfile && (
+        <Appbar.Action 
+          icon="account-circle" 
+          onPress={handleProfilePress} 
+        />
+      )}
     </Appbar.Header>
   );
 };

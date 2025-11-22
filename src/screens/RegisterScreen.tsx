@@ -15,63 +15,159 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const { register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState(''); // ADD NAME FIELD
-  const [role, setRole] = useState<'manager' | 'client'>('client'); // ADD ROLE FIELD
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'manager' | 'client'>('client');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!email || !password || !name) { // CHECK NAME
+    if (!email || !password || !name) {
       Alert.alert('Error', 'Please enter all fields');
       return;
     }
-    setLoading(true);
-    const result = await register(email, password, name, role); // PASS ALL PARAMETERS
-    setLoading(false);
 
-    if (result.success) {
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await register(email, password, name, role);
       Alert.alert('Success', 'Account created successfully!');
-      navigation.navigate('RoleSelection'); // NAVIGATE TO ROLE SELECTION
-    } else {
-      Alert.alert('Registration Failed', result.error || 'Something went wrong');
+      
+      // 🚨 FIX: Navigate to RoleSelection WITH the selected role
+      navigation.navigate('RoleSelection', { userRole: role });
+      
+    } catch (error: any) {
+      Alert.alert('Registration Failed', error.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign Up</Text>
-      <TextInput label="Full Name" value={name} onChangeText={setName} style={styles.input} />
-      <TextInput label="Email" value={email} onChangeText={setEmail} style={styles.input} autoCapitalize="none" />
-      <TextInput label="Password" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry />
-      
-      {/* ADD ROLE SELECTION */}
+
+      <TextInput
+        label="Full Name"
+        value={name}
+        onChangeText={setName}
+        style={styles.input}
+        autoCapitalize="words"
+      />
+
+      <TextInput
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        style={styles.input}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+
+      <TextInput
+        label="Password"
+        value={password} 
+        onChangeText={setPassword}
+        style={styles.input}
+        secureTextEntry
+        autoCapitalize="none"
+      />
+
+      {/* Role Selection */}
       <Text style={styles.roleLabel}>I am a:</Text>
-      <RadioButton.Group onValueChange={value => setRole(value as 'manager' | 'client')} value={role}>
-        <View style={styles.radioOption}>
-          <RadioButton value="client" />
-          <Text>Client</Text>
+      <View style={styles.roleSelection}>
+        <View style={styles.roleOption}>
+          <RadioButton
+            value="client"
+            status={role === 'client' ? 'checked' : 'unchecked'}
+            onPress={() => setRole('client')}
+          />
+          <Text style={styles.roleText}>Client</Text>
         </View>
-        <View style={styles.radioOption}>
-          <RadioButton value="manager" />
-          <Text>Manager</Text>
+        <View style={styles.roleOption}>
+          <RadioButton
+            value="manager"
+            status={role === 'manager' ? 'checked' : 'unchecked'}
+            onPress={() => setRole('manager')}
+          />
+          <Text style={styles.roleText}>Manager</Text>
         </View>
-      </RadioButton.Group>
+      </View>
 
       {loading ? (
-        <ActivityIndicator />
+        <ActivityIndicator style={styles.loader} />
       ) : (
-        <Button mode="contained" onPress={handleRegister}>Sign Up</Button>
+        <Button 
+          mode="contained"
+          onPress={handleRegister}
+          style={styles.registerButton}
+          disabled={loading}
+        >
+          Sign Up
+        </Button>
       )}
-      <Button onPress={() => navigation.navigate('Login')}>Already have an account? Sign In</Button>      
+
+      <Button
+        onPress={() => navigation.navigate('Login')}
+        style={styles.loginLink}
+        disabled={loading}
+      >
+        Already have an account? Sign In
+      </Button>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 20 },
-  title: { fontSize: 24, textAlign: 'center', marginBottom: 20 },
-  input: { marginBottom: 10 },
-  roleLabel: { marginTop: 10, marginBottom: 5, fontWeight: 'bold' },
-  radioOption: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: '#fff'
+  },
+  title: {
+    fontSize: 28,
+    textAlign: 'center',
+    marginBottom: 30,
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  input: {
+    marginBottom: 15,
+    backgroundColor: '#f9f9f9'
+  },
+  roleLabel: {
+    marginTop: 10,
+    marginBottom: 10,
+    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#333'
+  },
+  roleSelection: {
+    marginBottom: 20,
+  },
+  roleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingVertical: 5
+  },
+  roleText: {
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  registerButton: {
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  loginLink: {
+    marginTop: 20,
+  },
+  loader: {
+    marginTop: 20,
+  }
 });
 
 export default RegisterScreen;

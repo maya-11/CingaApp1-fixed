@@ -1,131 +1,177 @@
-﻿import React, { createContext, useState, useContext, ReactNode } from 'react';
-import { auth } from '../services/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
-import { User, AuthState } from '../types';
+﻿import React, { createContext, useState, useContext, useEffect } from 'react';
+import {
+  auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
+} from '../services/firebase';
+import { authService, userService, User } from '../services/backendService';
 
-interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>; // FIX RETURN TYPE
-  register: (email: string, password: string, name: string, role: 'manager' | 'client') => Promise<{ success: boolean; error?: string }>; // FIX RETURN TYPE
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name: string, role: 'manager' | 'client') => Promise<void>;
   logout: () => Promise<void>;
-  setUserRole: (role: 'manager' | 'client') => void;
-  userRole: 'manager' | 'client' | null; // ADD THIS
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-interface AuthProviderProps {
-  children: ReactNode;
-}
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    loading: true,
-    userRole: null,
-  });
-
-  const setUserRole = (role: 'manager' | 'client') => {
-    setAuthState(prev => ({
-      ...prev,
-      userRole: role
-    }));
-  };
-
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    setAuthState(prev => ({ ...prev, loading: true }));
-    try {
-      // Mock login for now - replace with actual Firebase auth
-      console.log('Login attempt:', email, password);
+  useEffect(() => {
+    console.log('🔄 AuthProvider: Setting up auth state listener');
+    
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      console.log('🎯 Auth state changed:', firebaseUser?.email);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (firebaseUser) {
+        try {
+          console.log('🔄 Firebase user detected, getting token...');
+          const token = await firebaseUser.getIdToken();
+          const response = await authService.login(token);
 
-      const mockUser: User = {
-        id: '1',
-        email: email,
-        name: 'Test User',
-        role: email.includes('client') ? 'client' : 'manager',
-        company: 'Test Company'
-      };
+          if (response.success) {
+            console.log('✅ Auto-login successful:', response.user.role);
+            setUser(response.user);
+          } else {
+            console.error('❌ Auto-login failed');
+            setUser(null);
+          }
+        } catch (error) {
+          console.error('❌ Auto-login error:', error);
+          setUser(null);
+        }
+      } else {
+        console.log('👤 No user signed in');
+        setUser(null);
+      }
+      setLoading(false);
+    });
 
-      setAuthState({
-        user: mockUser,
-        isAuthenticated: true,
-        loading: false,
-        userRole: mockUser.role,
-      });
+    return unsubscribe;
+  }, []);
 
-      return { success: true }; // RETURN SUCCESS
-    } catch (error: any) {
-      setAuthState(prev => ({ ...prev, loading: false }));
-      return { success: false, error: error.message }; // RETURN ERROR
-    }
-  };
-
-  const register = async (email: string, password: string, name: string, role: 'manager' | 'client'): Promise<{ success: boolean; error?: string }> => {
-    setAuthState(prev => ({ ...prev, loading: true }));
+  const login = async (email: string, password: string) => {
+    setLoading(true);
     try {
-      // Mock registration
-      console.log('Register attempt:', email, name, role);
+      console.log('🚀 Login started for:', email);
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 1. Firebase authentication
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-      const mockUser: User = {
-        id: '1',
-        email: email,
-        name: name,
-        role: role,
-        company: 'Test Company'
-      };
+      if (!firebaseUser) throw new Error('Firebase login failed');
 
-      setAuthState({
-        user: mockUser,
-        isAuthenticated: true,
-        loading: false,
-        userRole: role,
-      });
+      // 2. Backend authentication
+      const token = await firebaseUser.getIdToken();
+      const response = await authService.login(token);
 
-      return { success: true }; // RETURN SUCCESS
+      if (response.success) {
+        console.log('✅ Login successful, user role:', response.user.role);
+        setUser(response.user);
+      } else {
+        throw new Error(response.error || 'Login failed');
+      }
+
     } catch (error: any) {
-      setAuthState(prev => ({ ...prev, loading: false }));
-      return { success: false, error: error.message }; // RETURN ERROR
+      console.error('❌ Login error:', error);
+      
+      let errorMessage = 'Login failed';
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const logout = async (): Promise<void> => {
-    setAuthState(prev => ({ ...prev, loading: true }));
+  const register = async (email: string, password: string, name: string, role: 'manager' | 'client') => {
+    setLoading(true);
+    try {
+      console.log('🚀 Registration started for:', email, 'as', role);
+
+      // 1. Create Firebase user
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // 2. Update Firebase profile
+      await updateProfile(firebaseUser, { displayName: name });
+
+      // 3. Backend registration with role
+      const token = await firebaseUser.getIdToken();
+      const response = await authService.login(token, role);
+
+      if (response.success) {
+        console.log('✅ Registration successful, user role:', response.user.role);
+        setUser(response.user);
+      } else {
+        throw new Error(response.error || 'Registration failed');
+      }
+
+    } catch (error: any) {
+      console.error('❌ Registration error:', error);
+      
+      let errorMessage = 'Registration failed';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already registered';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
     try {
       await auth.signOut();
-      setAuthState({
-        user: null,
-        isAuthenticated: false,
-        loading: false,
-        userRole: null,
-      });
-    } catch (error) {
-      setAuthState(prev => ({ ...prev, loading: false }));
-      throw error;
+      setUser(null);
+      console.log('✅ Logout successful');
+    } catch (error: any) {
+      console.error('Logout error:', error);
+      throw new Error('Logout failed');
     }
   };
 
-  const value: AuthContextType = {
-    ...authState,
-    login,
-    register,
-    logout,
-    setUserRole,
-    userRole: authState.userRole, // ADD THIS
+  const refreshUser = async () => {
+    if (user) {
+      try {
+        const updatedUser = await userService.getUser(user.id);
+        setUser(updatedUser);
+      } catch (error) {
+        console.error('Failed to refresh user:', error);
+        throw error;
+      }
+    }
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      register,
+      logout,
+      refreshUser
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');

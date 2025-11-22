@@ -1,247 +1,191 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, FlatList } from 'react-native';
-import { Card, Text, Button, IconButton, Divider, Chip, useTheme } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { Appbar, Card, Text, Button, Chip, ActivityIndicator, useTheme } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../types';
-import AppHeader from '../components/AppHeader';
+import { notificationService } from '../services/backendService';
+import { useAuth } from '../contexts/AuthContext';
 
-type NotificationScreenNavigationProp = StackNavigationProp<
-  RootStackParamList,
-  'Notifications'
->;
+type NotificationScreenNavigationProp = StackNavigationProp<any, 'Notifications'>;
 
 interface Props {
   navigation: NotificationScreenNavigationProp;
 }
 
-type Notification = {
+interface Notification {
   id: string;
   title: string;
   message: string;
-  timestamp: string;
-  type: 'info' | 'warning' | 'success' | 'error';
-  read: boolean;
-  projectId?: string;
-  projectName?: string;
-};
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  related_entity_type?: string;
+  related_entity_id?: string;
+}
 
 const NotificationScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useTheme();
+  const { user } = useAuth();
+  
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Mock notifications data
-  const notifications: Notification[] = [
-    {
-      id: '1',
-      title: 'Project Deadline Approaching',
-      message: 'Website Redesign project deadline is in 3 days. Please review the progress.',
-      timestamp: '2024-10-28 10:30 AM',
-      type: 'warning',
-      read: false,
-      projectId: '1',
-      projectName: 'Website Redesign'
-    },
-    {
-      id: '2',
-      title: 'Task Completed',
-      message: 'Sarah Johnson completed the homepage design task.',
-      timestamp: '2024-10-27 03:15 PM',
-      type: 'success',
-      read: false,
-      projectId: '2',
-      projectName: 'Mobile App Development'
-    },
-    {
-      id: '3',
-      title: 'Budget Alert',
-      message: 'E-commerce Platform project has used 85% of allocated budget.',
-      timestamp: '2024-10-26 09:45 AM',
-      type: 'error',
-      read: true,
-      projectId: '3',
-      projectName: 'E-commerce Platform'
-    },
-    {
-      id: '4',
-      title: 'New Message',
-      message: 'You have a new message from ABC Corporation regarding project requirements.',
-      timestamp: '2024-10-25 02:20 PM',
-      type: 'info',
-      read: true,
-      projectId: '1',
-      projectName: 'Website Redesign'
-    },
-    {
-      id: '5',
-      title: 'Milestone Reached',
-      message: 'Mobile App Development project reached 90% completion milestone.',
-      timestamp: '2024-10-24 11:00 AM',
-      type: 'success',
-      read: true,
-      projectId: '2',
-      projectName: 'Mobile App Development'
-    },
-    {
-      id: '6',
-      title: 'Team Update',
-      message: 'New team member John Smith has been added to your projects.',
-      timestamp: '2024-10-23 04:30 PM',
-      type: 'info',
-      read: true
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const loadNotifications = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoading(true);
+      console.log('🔔 Loading REAL notifications for user:', user.id);
+      
+      const notificationsData = await notificationService.getUserNotifications(user.id);
+      setNotifications(notificationsData);
+      
+      console.log(`✅ Loaded ${notificationsData.length} REAL notifications from database`);
+    } catch (error) {
+      console.error('❌ Failed to load notifications:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  ];
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await notificationService.markAsRead(notificationId);
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(notif => 
+          notif.id === notificationId ? { ...notif, is_read: true } : notif
+        )
+      );
+      console.log('✅ Notification marked as read in UI');
+    } catch (error) {
+      console.error('❌ Failed to mark as read:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!user?.id) return;
+    
+    try {
+      await notificationService.markAllAsRead(user.id);
+      
+      // Update all notifications to read
+      setNotifications(prev => 
+        prev.map(notif => ({ ...notif, is_read: true }))
+      );
+      console.log('✅ All notifications marked as read in UI');
+    } catch (error) {
+      console.error('❌ Failed to mark all as read:', error);
+    }
+  };
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'info': return '#2196F3';
-      case 'warning': return '#FF9800';
       case 'success': return '#4CAF50';
+      case 'warning': return '#FF9800';
       case 'error': return '#F44336';
-      default: return '#757575';
+      case 'info': 
+      default: return '#2196F3';
     }
   };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'info': return 'information';
-      case 'warning': return 'alert';
       case 'success': return 'check-circle';
+      case 'warning': return 'alert';
       case 'error': return 'alert-circle';
-      default: return 'bell';
+      case 'info':
+      default: return 'information';
     }
   };
-
-  const handleNotificationPress = (notification: Notification) => {
-    // Mark as read and navigate if it has a project
-    if (notification.projectId) {
-      // Navigate to project details
-      console.log('Navigate to project:', notification.projectId);
-    }
-  };
-
-  const handleMarkAllAsRead = () => {
-    // Implement mark all as read functionality
-    console.log('Mark all as read');
-  };
-
-  const handleClearAll = () => {
-    // Implement clear all notifications functionality
-    console.log('Clear all notifications');
-  };
-
-  const unreadCount = notifications.filter(notification => !notification.read).length;
 
   const renderNotificationItem = ({ item }: { item: Notification }) => (
     <Card 
       style={[
-        styles.notificationCard, 
-        !item.read && styles.unreadCard
+        styles.notificationCard,
+        !item.is_read && styles.unreadNotification
       ]}
-      onPress={() => handleNotificationPress(item)}
     >
-      <Card.Content style={styles.notificationContent}>
+      <Card.Content>
         <View style={styles.notificationHeader}>
-          <View style={styles.titleContainer}>
-            <IconButton
-              icon={getTypeIcon(item.type)}
-              size={16}
-              iconColor={getTypeColor(item.type)}
-              style={styles.typeIcon}
-            />
-            <Text variant="titleSmall" style={styles.notificationTitle}>
-              {item.title}
-            </Text>
-          </View>
-          {!item.read && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadBadgeText}>New</Text>
-            </View>
+          <Text style={styles.notificationTitle}>{item.title}</Text>
+          {!item.is_read && (
+            <Chip mode="outlined" style={styles.unreadChip}>NEW</Chip>
           )}
         </View>
-
-        <Text variant="bodyMedium" style={styles.notificationMessage}>
-          {item.message}
-        </Text>
-
+        
+        <Text style={styles.notificationMessage}>{item.message}</Text>
+        
         <View style={styles.notificationFooter}>
-          <Text variant="bodySmall" style={styles.timestamp}>
-            {item.timestamp}
+          <Text style={styles.notificationDate}>
+            {new Date(item.created_at).toLocaleDateString()}
           </Text>
-          {item.projectName && (
-            <Chip 
-              mode="outlined" 
+          
+          {!item.is_read && (
+            <Button 
+              mode="text" 
               compact
-              textStyle={styles.projectChipText}
+              onPress={() => handleMarkAsRead(item.id)}
+              style={styles.markReadButton}
             >
-              {item.projectName}
-            </Chip>
+              Mark Read
+            </Button>
           )}
         </View>
       </Card.Content>
     </Card>
   );
 
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
   return (
     <>
-      {/* FIXED: Changed showBackButton to showBack */}
-      <AppHeader 
-        navigation={navigation}
-        title="Notifications"
-        showBack={true}
-      />
-      
+      <Appbar.Header>
+        <Appbar.BackAction onPress={() => navigation.goBack()} />
+        <Appbar.Content title={`Notifications (${unreadCount})`} />
+        {unreadCount > 0 && (
+          <Appbar.Action 
+            icon="check-all" 
+            onPress={handleMarkAllAsRead}
+          />
+        )}
+      </Appbar.Header>
+
       <View style={styles.container}>
-        {/* Header Actions */}
-        <View style={styles.headerActions}>
-          <View style={styles.unreadCounter}>
-            <Text variant="titleMedium" style={styles.unreadCounterText}>
-              {unreadCount} unread notifications
-            </Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>Loading notifications...</Text>
           </View>
-          <View style={styles.actionButtons}>
-            <Button 
-              mode="text" 
-              onPress={handleMarkAllAsRead}
-              disabled={unreadCount === 0}
-            >
-              Mark all read
-            </Button>
-            <Button 
-              mode="text" 
-              textColor={theme.colors.error}
-              onPress={handleClearAll}
-            >
-              Clear all
-            </Button>
-          </View>
-        </View>
-
-        <Divider style={styles.divider} />
-
-        {/* Notifications List */}
-        {notifications.length > 0 ? (
+        ) : (
           <FlatList
             data={notifications}
             renderItem={renderNotificationItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id.toString()}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContainer}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={loadNotifications}
+                colors={[theme.colors.primary]}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>No notifications yet</Text>
+                <Text style={styles.emptySubtext}>
+                  You'll see real notifications here when you get assigned to projects
+                </Text>
+              </View>
+            }
           />
-        ) : (
-          <View style={styles.emptyState}>
-            <IconButton
-              icon="bell-off-outline"
-              size={64}
-              iconColor={theme.colors.onSurfaceDisabled}
-              disabled
-            />
-            <Text variant="titleMedium" style={styles.emptyStateTitle}>
-              No notifications
-            </Text>
-            <Text variant="bodyMedium" style={styles.emptyStateText}>
-              You're all caught up! New notifications will appear here.
-            </Text>
-          </View>
         )}
       </View>
     </>
@@ -253,45 +197,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  headerActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  unreadCounter: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  unreadCounterText: {
-    fontWeight: '600',
-    color: '#1E293B',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748B',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  divider: {
-    backgroundColor: '#E2E8F0',
-  },
-  listContainer: {
+  listContent: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
   notificationCard: {
+    marginBottom: 12,
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
-    elevation: 1,
+    elevation: 2,
   },
-  unreadCard: {
+  unreadNotification: {
     borderLeftWidth: 4,
     borderLeftColor: '#6366F1',
     backgroundColor: '#F8FAFF',
-  },
-  notificationContent: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
   },
   notificationHeader: {
     flexDirection: 'row',
@@ -299,33 +228,17 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  typeIcon: {
-    margin: 0,
-    marginRight: 8,
-  },
   notificationTitle: {
-    fontWeight: '600',
-    flex: 1,
-    color: '#1E293B',
-  },
-  unreadBadge: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  unreadBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 16,
     fontWeight: 'bold',
+    color: '#1E293B',
+    flex: 1,
+  },
+  unreadChip: {
+    backgroundColor: '#6366F1',
   },
   notificationMessage: {
+    fontSize: 14,
     color: '#64748B',
     lineHeight: 20,
     marginBottom: 12,
@@ -335,32 +248,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  timestamp: {
-    color: '#94A3B8',
+  notificationDate: {
     fontSize: 12,
+    color: '#94A3B8',
   },
-  projectChipText: {
-    fontSize: 11,
-  },
-  separator: {
-    height: 8,
+  markReadButton: {
+    marginLeft: 8,
   },
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 48,
+    paddingVertical: 60,
   },
-  emptyStateTitle: {
-    marginTop: 16,
-    marginBottom: 8,
+  emptyText: {
+    fontSize: 18,
     color: '#64748B',
-    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: 8,
   },
-  emptyStateText: {
+  emptySubtext: {
+    fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
-    lineHeight: 20,
   },
 });
 

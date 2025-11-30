@@ -5,7 +5,7 @@ import {
   createUserWithEmailAndPassword,
   updateProfile
 } from '../services/firebase';
-import { authService, userService, User } from '../services/backendService';
+import { User } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -13,7 +13,6 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, role: 'manager' | 'client') => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +21,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ ADD USER SYNC FUNCTION
+  const syncUserToDatabase = async (firebaseUser: any, name?: string, role?: string) => {
+    try {
+      console.log('🔄 Syncing user to database...', firebaseUser.uid);
+      
+      const userData = {
+        firebase_uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: name || firebaseUser.displayName || firebaseUser.email.split('@')[0],
+        role: role || (firebaseUser.email === 'manager@cinga.com' ? 'manager' : 'client')
+      };
+
+      // Call your backend sync endpoint
+      const response = await fetch('http://localhost:5000/api/users/sync-firebase-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to sync user');
+      }
+
+      console.log('✅ User synced to database:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ User sync failed:', error);
+      // Don't throw error here - we still want the user to be able to login
+      // even if sync fails (they can be synced later)
+    }
+  };
+
+  // ✅ SIMPLIFIED: Use Firebase UID directly for new manager system
+  const mapUserToDatabaseId = (firebaseUser: any): User => {
+    const email = firebaseUser.email!;
+    
+    return {
+      id: firebaseUser.uid, // ✅ Use Firebase UID directly (manager service will handle the rest)
+      uid: firebaseUser.uid,
+      email: email,
+      name: firebaseUser.displayName || (email === 'manager@cinga.com' ? 'Cinga Project Manager' : email.split('@')[0]),
+      role: email === 'manager@cinga.com' ? 'manager' : (email.includes('manager') ? 'manager' : 'client')
+    };
+  };
+
   useEffect(() => {
     console.log('🔄 AuthProvider: Setting up auth state listener');
     
@@ -29,22 +77,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('🎯 Auth state changed:', firebaseUser?.email);
       
       if (firebaseUser) {
-        try {
-          console.log('🔄 Firebase user detected, getting token...');
-          const token = await firebaseUser.getIdToken();
-          const response = await authService.login(token);
-
-          if (response.success) {
-            console.log('✅ Auto-login successful:', response.user.role);
-            setUser(response.user);
-          } else {
-            console.error('❌ Auto-login failed');
-            setUser(null);
-          }
-        } catch (error) {
-          console.error('❌ Auto-login error:', error);
-          setUser(null);
-        }
+        // ✅ SYNC USER TO DATABASE ON AUTH STATE CHANGE
+        await syncUserToDatabase(firebaseUser);
+        
+        const userData = mapUserToDatabaseId(firebaseUser);
+        console.log('✅ User mapped - Firebase UID:', userData.uid, 'Role:', userData.role);
+        setUser(userData);
       } else {
         console.log('👤 No user signed in');
         setUser(null);
@@ -60,22 +98,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('🚀 Login started for:', email);
 
-      // 1. Firebase authentication
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
       if (!firebaseUser) throw new Error('Firebase login failed');
+      console.log('✅ Firebase login successful:', firebaseUser.uid);
 
-      // 2. Backend authentication
-      const token = await firebaseUser.getIdToken();
-      const response = await authService.login(token);
+      // ✅ SYNC USER TO DATABASE ON LOGIN
+      await syncUserToDatabase(firebaseUser);
 
-      if (response.success) {
-        console.log('✅ Login successful, user role:', response.user.role);
-        setUser(response.user);
-      } else {
-        throw new Error(response.error || 'Login failed');
-      }
+      const userData = mapUserToDatabaseId(firebaseUser);
+      setUser(userData);
+      console.log('✅ Login complete, Firebase UID:', userData.uid, 'Role:', userData.role);
 
     } catch (error: any) {
       console.error('❌ Login error:', error);
@@ -100,23 +134,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('🚀 Registration started for:', email, 'as', role);
 
-      // 1. Create Firebase user
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
-      // 2. Update Firebase profile
       await updateProfile(firebaseUser, { displayName: name });
 
-      // 3. Backend registration with role
-      const token = await firebaseUser.getIdToken();
-      const response = await authService.login(token, role);
+      // ✅ SYNC USER TO DATABASE ON REGISTRATION (with explicit name and role)
+      await syncUserToDatabase(firebaseUser, name, role);
 
-      if (response.success) {
-        console.log('✅ Registration successful, user role:', response.user.role);
-        setUser(response.user);
-      } else {
-        throw new Error(response.error || 'Registration failed');
-      }
+      const userData = mapUserToDatabaseId(firebaseUser);
+      userData.name = name;
+      userData.role = role;
+
+      console.log('✅ Registration successful, Firebase UID:', userData.uid, 'Role:', userData.role);
+      setUser(userData);
 
     } catch (error: any) {
       console.error('❌ Registration error:', error);
@@ -145,18 +176,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const refreshUser = async () => {
-    if (user) {
-      try {
-        const updatedUser = await userService.getUser(user.id);
-        setUser(updatedUser);
-      } catch (error) {
-        console.error('Failed to refresh user:', error);
-        throw error;
-      }
-    }
-  };
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -164,7 +183,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       login,
       register,
       logout,
-      refreshUser
     }}>
       {children}
     </AuthContext.Provider>

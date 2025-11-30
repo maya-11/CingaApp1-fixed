@@ -1,16 +1,16 @@
-// App.tsx
+// App.tsx - FULLY FIXED VERSION
 import React from 'react'
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { View, ActivityIndicator, Text } from 'react-native';
+import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from './src/types';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { AppTheme } from './src/theme/AppTheme';
 
-// Import gesture handler at the very top (important!)
 import 'react-native-gesture-handler'
 
 // Auth Screens
@@ -26,14 +26,20 @@ import CreateProjectScreen from './src/screens/CreateProjectScreen';
 import SelectClientScreen from './src/screens/SelectClientScreen';
 import ProjectListScreen from './src/screens/ProjectListScreen';
 import ProjectDetailScreen from './src/screens/ProjectDetailScreen';
+import EditProjectScreen from './src/screens/EditProjectScreen';
+
+// Client Screens
+import ClientDashboard from './src/screens/client/ClientDashboard';
+
+// ✅ FIXED: Import the REAL ClientProjectDetailScreen
+import ClientProjectDetailScreen from './src/screens/client/ClientProjectDetailScreen';
+
+// ✅ ADDED: Import FeedbackSupportScreen
+import FeedbackSupportScreen from './src/screens/client/FeedbackSupportScreen';
 
 // New Screens
 import TasksScreen from './src/screens/TasksScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
-// ❌ REMOVE THIS: import TrelloScreen from './src/screens/TrelloScreen';
-
-// Client Navigator
-import ClientNavigator from './src/navigation/ClientNavigator';
 
 // Shared Screens
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -110,33 +116,74 @@ function AppNavigator() {
             options={{ title: 'Choose Role', headerShown: false }}
           />
           
-          <Stack.Screen 
-            name="ManagerDashboard" 
-            component={ManagerDashboard}
-            options={{ title: 'Dashboard' }}
-          />
-          <Stack.Screen 
-            name="CreateProjectScreen"
-            component={CreateProjectScreen}
-            options={{ title: 'Create Project' }}
-          />
-          <Stack.Screen 
-            name="SelectClientScreen"
-            component={SelectClientScreen}
-            options={{ title: 'Select Client' }}
-          />
-          <Stack.Screen 
-            name="ProjectListScreen" 
-            component={ProjectListScreen}
-            options={{ title: 'My Projects' }}
-          />
-          <Stack.Screen 
-            name="ProjectDetailScreen" 
-            component={ProjectDetailScreen}
-            options={{ title: 'Project Details' }}
-          />
+          {/* Manager Routes */}
+          {user?.role === 'manager' && (
+            <>
+              <Stack.Screen 
+                name="ManagerDashboard" 
+                component={ManagerDashboard}
+                options={{ title: 'Dashboard' }}
+              />
+              <Stack.Screen 
+                name="CreateProjectScreen"
+                component={CreateProjectScreen}
+                options={{ title: 'Create Project' }}
+              />
+              <Stack.Screen 
+                name="SelectClientScreen"
+                component={SelectClientScreen}
+                options={{ title: 'Select Client' }}
+              />
+              <Stack.Screen 
+                name="ProjectListScreen" 
+                component={ProjectListScreen}
+                options={{ title: 'My Projects' }}
+              />
+              <Stack.Screen 
+                name="ProjectDetailScreen" 
+                component={ProjectDetailScreen}
+                options={{ title: 'Project Details' }}
+              />
+              <Stack.Screen 
+                name="EditProjectScreen" 
+                component={EditProjectScreen}
+                options={{ title: 'Edit Project' }}
+              />
+            </>
+          )}
           
-          {/* New Screens */}
+          {/* Client Routes */}
+          {user?.role === 'client' && (
+            <>
+              <Stack.Screen 
+                name="ClientDashboard" 
+                component={ClientDashboard}
+                options={{ title: 'My Projects', headerShown: false }}
+              />
+              
+              {/* ✅ FIXED: Use the REAL ClientProjectDetailScreen */}
+              <Stack.Screen 
+                name="ClientProjectDetails" 
+                component={ClientProjectDetailScreen}
+                options={({ route }): NativeStackNavigationOptions => ({
+                  title: route.params?.project?.title || 'Project Details',
+                  headerStyle: {
+                    backgroundColor: AppTheme.colors.primary,
+                  },
+                  headerTintColor: AppTheme.colors.text.light,
+                })}
+              />
+
+              {/* ✅ ADDED: FeedbackSupportScreen for clients */}
+              <Stack.Screen 
+                name="FeedbackSupportScreen" 
+                component={FeedbackSupportScreen}
+                options={{ title: 'Feedback & Support' }}
+              />
+            </>
+          )}
+          
+          {/* Shared Manager/Client Screens */}
           <Stack.Screen 
             name="TasksScreen" 
             component={TasksScreen}
@@ -147,20 +194,8 @@ function AppNavigator() {
             component={BudgetScreen}
             options={{ title: 'Budget Management' }}
           />
-          {/* ❌ REMOVE THIS TRELLO SCREEN ROUTE */}
-          {/* <Stack.Screen 
-            name="TrelloScreen" 
-            component={TrelloScreen}
-            options={{ title: 'Trello Integration' }}
-          /> */}
           
-          {/* Client Navigator */}
-          <Stack.Screen 
-            name="ClientStack" 
-            component={ClientNavigator}
-            options={{ headerShown: false }}
-          />
-          
+          {/* Shared Screens */}
           <Stack.Screen 
             name="Profile" 
             component={ProfileScreen}

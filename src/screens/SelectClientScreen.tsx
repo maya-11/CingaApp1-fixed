@@ -1,3 +1,4 @@
+// src/screens/SelectClientScreen.tsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, Alert } from 'react-native';
 import { Searchbar, Card, Text, Button, ActivityIndicator, useTheme, Appbar, List } from 'react-native-paper';
@@ -45,7 +46,7 @@ const SelectClientScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [searchQuery, clients]);
 
-  // 🆕 SIMPLIFIED CLIENT LOADING
+  // ✅ FIXED: Proper client loading with User type compatibility
   const loadClients = async () => {
     try {
       setLoading(true);
@@ -53,14 +54,17 @@ const SelectClientScreen: React.FC<Props> = ({ navigation, route }) => {
       
       const clientsData = await userService.getClients();
       
-      // 🆕 SIMPLE VALIDATION - JUST NAMES
-      const validatedClients = clientsData
-        .filter(client => client && client.id && client.name) // Only clients with ID and name
+      // ✅ FIXED: Transform backend data to match User interface
+      const validatedClients: User[] = clientsData
+        .filter(client => client && client.id && client.name)
         .map(client => ({
           id: String(client.id),
+          uid: client.uid || String(client.id), // ✅ Add uid field
           name: String(client.name),
           email: String(client.email || ''),
-          role: 'client' as const
+          role: 'client' as const,
+          phone: client.phone || '',
+          company: client.company || ''
         }));
       
       console.log(`✅ Loaded ${validatedClients.length} valid clients`);
@@ -95,7 +99,10 @@ const SelectClientScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   };
 
-  // 🆕 SIMPLE LIST ITEM RENDER
+  // ✅ FIXED: Proper keyExtractor that returns string
+  const keyExtractor = (item: User) => String(item.id);
+
+  // Simple list item render
   const renderClientItem = ({ item }: { item: User }) => (
     <List.Item
       title={item.name}
@@ -165,11 +172,11 @@ const SelectClientScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         ) : (
           <>
-            {/* Simple List */}
+            {/* ✅ FIXED: FlatList with proper keyExtractor */}
             <FlatList
               data={filteredClients}
               renderItem={renderClientItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={keyExtractor} // ✅ Now returns string only
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyState}>

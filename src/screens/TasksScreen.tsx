@@ -1,3 +1,4 @@
+// src/screens/TasksScreen.tsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
 import { Card, Title, Text, Button, ProgressBar, Chip, IconButton, ActivityIndicator, TextInput } from 'react-native-paper';
@@ -18,34 +19,72 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskName, setNewTaskName] = useState('');
 
+  // Debug: Check if taskService is available
+  useEffect(() => {
+    console.log('🔧 DEBUG: taskService available?', !!taskService);
+    console.log('🔧 DEBUG: taskService methods:', taskService ? Object.keys(taskService) : 'UNDEFINED');
+  }, []);
+
   // Fetch tasks from backend
   const fetchTasks = async () => {
     try {
       setLoading(true);
       console.log('📋 Fetching tasks for project:', project.id);
       
+      if (!taskService) {
+        throw new Error('Task service is not available');
+      }
+      
+      console.log('🔧 Calling getProjectTasks...');
       const tasksData = await taskService.getProjectTasks(project.id.toString());
-      console.log('✅ Tasks fetched:', tasksData.length);
+      console.log('✅ Tasks fetched successfully:', tasksData?.length || 0);
+      
+      if (!Array.isArray(tasksData)) {
+        console.warn('⚠️ Tasks data is not an array:', tasksData);
+        setTasks([]);
+        return;
+      }
       
       // Transform backend data to match frontend interface
-      const transformedTasks = tasksData.map((task: any) => ({
-        ...task,
-        name: task.name || task.title, // Handle both 'name' and 'title' from backend
-        progress: calculateTaskProgress(task.status), // Calculate progress for frontend
-        assignee_name: task.assigned_name || 'Unassigned' // Map assigned_name to assignee_name
+      const transformedTasks: Tasks[] = tasksData.map((task: any, index: number) => ({
+        id: String(task.id || task._id || `temp-${Date.now()}-${index}`),
+        project_id: String(task.project_id || project.id),
+        name: task.name || task.title || 'Unnamed Task',
+        assigned_to: task.assigned_to || '',
+        status: task.status || 'todo',
+        description: task.description || '',
+        due_date: task.due_date,
+        created_at: task.created_at,
+        updated_at: task.updated_at,
+        priority: task.priority || 'medium',
+        client_notes: task.client_notes,
+        // Frontend-only properties
+        progress: calculateTaskProgress(task.status),
+        assignee_name: task.assignee_name || task.assigned_name || 'Unassigned'
       }));
       
+      console.log('✅ Transformed tasks:', transformedTasks.length);
       setTasks(transformedTasks);
-    } catch (error) {
+      
+    } catch (error: any) {
       console.error('❌ Failed to fetch tasks:', error);
-      Alert.alert('Error', 'Failed to load tasks. Please check your connection.');
+      
+      let errorMessage = 'Failed to load tasks. Please check your connection.';
+      if (error.message.includes('Failed to load tasks:')) {
+        errorMessage = error.message;
+      } else if (error.message.includes('Task service is not available')) {
+        errorMessage = 'Application error: Task service not available.';
+      }
+      
+      Alert.alert('Error', errorMessage);
+      setTasks([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Calculate progress based on status (for frontend display only)
+  // Calculate progress based on status
   const calculateTaskProgress = (status: string): number => {
     switch (status) {
       case 'todo': return 0;
@@ -74,20 +113,25 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
     try {
       setAddingTask(true);
       const newTaskData = {
-        id: Date.now().toString(), // Generate temporary ID
         project_id: project.id,
-        name: newTaskName.trim(), // ✅ USING 'name' NOT 'title'
+        name: newTaskName.trim(),
         description: '',
-        status: 'todo' as const,
-        priority: 'medium' as const,
-        assigned_to: '' // Empty for now
+        status: 'todo',
+        priority: 'medium',
+        assigned_to: ''
       };
+      
+      console.log('🔧 Creating task with data:', newTaskData);
+      
+      if (!taskService) {
+        throw new Error('Task service is not available');
+      }
       
       await taskService.createTask(newTaskData);
       setNewTaskName('');
-      await fetchTasks(); // Refresh tasks
+      await fetchTasks(); // Refresh the list
       Alert.alert('Success', 'Task created successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Create task error:', error);
       Alert.alert('Error', 'Failed to create task. Please try again.');
     } finally {
@@ -103,7 +147,7 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
         task.id.toString() === taskId ? { 
           ...task, 
           status: newStatus as any,
-          progress: calculateTaskProgress(newStatus) // Update progress too
+          progress: calculateTaskProgress(newStatus)
         } : task
       ));
       
@@ -111,12 +155,11 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
     } catch (error) {
       console.error('Update task status error:', error);
       Alert.alert('Error', 'Failed to update task status');
-      // Revert local change if service call fails
-      fetchTasks();
+      fetchTasks(); // Revert changes if failed
     }
   };
 
-  // Client update task (with notes)
+  // Client update task with notes
   const handleClientUpdateTask = async (taskId: string, newStatus: string, notes: string) => {
     try {
       setTasks(prev => prev.map(task => 
@@ -128,7 +171,7 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
         } : task
       ));
       
-      await taskService.clientUpdateTask(taskId, newStatus, notes);
+      await taskService.updateTaskStatusAndNotes(taskId, newStatus, notes);
       Alert.alert('Success', 'Task updated successfully!');
     } catch (error) {
       console.error('Client update task error:', error);
@@ -151,14 +194,12 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
             try {
               // Remove locally immediately for better UX
               setTasks(prev => prev.filter(task => task.id.toString() !== taskId));
-              
               await taskService.deleteTask(taskId);
               Alert.alert('Success', 'Task deleted successfully');
             } catch (error) {
               console.error('Delete task error:', error);
               Alert.alert('Error', 'Failed to delete task');
-              // Revert if service call fails
-              fetchTasks();
+              fetchTasks(); // Revert changes if failed
             }
           }
         }
@@ -281,11 +322,11 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
                 <Card.Content>
                   <View style={styles.taskHeader}>
                     <View style={styles.taskInfo}>
-                      <Text style={styles.taskTitle}>{task.name}</Text> {/* ✅ USING task.name */}
+                      <Text style={styles.taskTitle}>{task.name}</Text>
                       {task.description ? (
                         <Text style={styles.taskDescription}>{task.description}</Text>
                       ) : null}
-                      {task.assignee_name && (
+                      {task.assignee_name && task.assignee_name !== 'Unassigned' && (
                         <Text style={styles.taskAssignee}>
                           Assigned to: {task.assignee_name}
                         </Text>
@@ -368,7 +409,7 @@ const TasksScreen: React.FC<TasksScreenProps> = ({ navigation, route }) => {
               </Card>
             ))}
 
-            {tasks.length === 0 && (
+            {tasks.length === 0 && !loading && (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateText}>No tasks yet</Text>
                 <Text style={styles.emptyStateSubtext}>

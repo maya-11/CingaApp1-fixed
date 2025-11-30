@@ -32,8 +32,8 @@ const RoleSelectionScreen: React.FC<Props> = ({ navigation, route }) => {
         console.log('📍 Navigating to ManagerDashboard');
         navigation.replace('ManagerDashboard');
       } else {
-        console.log('📍 Navigating to ClientStack');
-        navigation.replace('ClientStack');
+        console.log('📍 Navigating to ClientDashboard');
+        navigation.replace('ClientDashboard');
       }
     } catch (error) {
       console.error('❌ Navigation error:', error);

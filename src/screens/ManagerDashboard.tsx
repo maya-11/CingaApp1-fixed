@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions, RefreshControl, Modal } from 'react-native';
 import { Card, Title, Text, Button, ProgressBar, IconButton, useTheme, ActivityIndicator, Snackbar, Chip } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, Project, User } from '../types';
+import { RootStackParamList, Project, User, DashboardStats } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { dashboardService, projectService, userService, DashboardStats } from '../services/backendService';
+import { managerService,} from '../services/managerService';
 import AppHeader from '../components/AppHeader';
+import { userService } from '../services/backendService';
 
 type ExtendedStackParamList = RootStackParamList & {
   CreateProjectScreen: { selectedClient?: User };
@@ -29,7 +30,7 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dashboardData, setDashboardData] = useState<DashboardStats | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<User[]>([]);
   const [error, setError] = useState<string>('');
@@ -43,6 +44,16 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
     }
   }, [user]);
 
+  // Refresh when screen comes into focus
+useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', () => {
+    console.log('🔄 ManagerDashboard focused - refreshing data');
+    loadDashboardData();
+    loadClients();
+  });
+  return unsubscribe;
+}, [navigation]);
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -53,26 +64,30 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      console.log('ManagerDashboard: Loading REAL dashboard data for user:', user.id);
+      console.log('ManagerDashboard: Loading dashboard data for Firebase UID:', user.id);
       
       try {
-        const stats = await dashboardService.getManagerDashboard(user.id);
-        console.log('✅ ManagerDashboard: REAL dashboard data loaded successfully');
-        setDashboardData(stats);
-
-        const projects = await projectService.getManagerProjects(user.id);
-        console.log('✅ ManagerDashboard: REAL projects loaded successfully');
-        setRecentProjects(projects.slice(0, 5));
-
+        // ✅ Use the new manager service with Firebase UID
+        const dashboardResponse = await managerService.getManagerDashboard(user.id);
+        console.log('✅ ManagerDashboard: Dashboard data loaded successfully');
+        
+        setDashboardData(dashboardResponse);
+        setRecentProjects(dashboardResponse.recentProjects || []);
         setShowBackendWarning(false);
-        console.log('✅ Backend connection successful - using real data');
         
       } catch (apiError: any) {
         console.error('❌ ManagerDashboard: Backend API failed:', apiError.message);
         setShowBackendWarning(true);
         setDashboardData(null);
         setRecentProjects([]);
-        setError('Failed to load data from server. Please check your connection.');
+        
+        if (apiError.code === 'ERR_NETWORK') {
+          setError('Network error: Cannot connect to backend server.');
+        } else if (apiError.response?.status === 404) {
+          setError('Manager account not found in database. Please contact support.');
+        } else {
+          setError('Failed to load dashboard data. Please check your connection.');
+        }
       }
 
     } catch (err: any) {
@@ -86,12 +101,13 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
 
   const loadClients = async () => {
     try {
-      console.log('🔄 Loading real clients...');
+      console.log('🔄 Loading clients...');
       const clientsData = await userService.getClients();
       setClients(clientsData);
-      console.log(`✅ Loaded ${clientsData.length} real clients from database`);
-    } catch (error) {
+      console.log(`✅ Loaded ${clientsData.length} clients from database`);
+    } catch (error: any) {
       console.error('❌ Failed to load clients:', error);
+      setClients([]);
     }
   };
 
@@ -100,6 +116,25 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
     setRefreshing(true);
     loadDashboardData();
     loadClients();
+  };
+
+  // ✅ FIXED: Progress bar logic based on project status
+  const getProgressBarColor = (status: string) => {
+    if (status === 'completed') return '#6366F1'; // Full purple for completed
+    if (status === 'active') return '#6366F1'; // Purple for active
+    return '#6366F1'; // Purple for all statuses
+  };
+
+  const getProgressValue = (status: string) => {
+    if (status === 'completed') return 1; // Full for completed (100%)
+    if (status === 'active') return 0.5; // Halfway for active (50%)
+    return 0.25; // Quarter for other statuses (25%)
+  };
+
+  const getFakeProgressPercentage = (status: string) => {
+    if (status === 'completed') return 100; // 100% for completed
+    if (status === 'active') return 50; // 50% for active
+    return 25; // 25% for other statuses
   };
 
   const handleViewProjectDetails = (project: Project) => {
@@ -211,37 +246,34 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
           <Card style={styles.warningCard} elevation={2}>
             <Card.Content style={styles.warningContent}>
               <IconButton
-                icon="cloud-alert"
+                icon="cloud-off-outline"
                 size={20}
-                iconColor="#F59E0B"
+                iconColor="#EF4444"
               />
               <View style={styles.warningText}>
                 <Text style={styles.warningTitle}>Connection Issue</Text>
                 <Text style={styles.warningSubtitle}>
-                  Unable to connect to server. Please check your internet connection.
+                  {error || 'Cannot connect to backend server'}
                 </Text>
               </View>
-              <IconButton
-                icon="close"
-                size={16}
-                onPress={() => setShowBackendWarning(false)}
-              />
+              <Button 
+                mode="contained" 
+                compact
+                onPress={onRefresh}
+                style={styles.retryButton}
+              >
+                Retry
+              </Button>
             </Card.Content>
           </Card>
         )}
 
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Good morning,</Text>
+            <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>{user?.name || 'Manager'}</Text>
             <Text style={styles.userRole}>Project Manager</Text>
           </View>
-          <IconButton
-            icon="bell-outline"
-            size={24}
-            iconColor="#6366F1"
-            onPress={() => console.log('Notifications')}
-          />
         </View>
 
         <Card style={styles.quickActionsCard} elevation={2}>
@@ -268,84 +300,83 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
                 View Clients
               </Button>
             </View>
-            
-            <View style={styles.clientsSummary}>
-              <Text style={styles.clientsLabel}>Available Clients:</Text>
-              <View style={styles.clientsChips}>
-                {clients.slice(0, 3).map((client) => (
-                  <Chip 
-                    key={client.id} 
-                    mode="outlined" 
-                    style={styles.clientChip}
-                    onPress={() => handleAssignToClient(client)}
-                  >
-                    {client.name}
-                  </Chip>
-                ))}
-                {clients.length > 3 && (
-                  <Chip 
-                    mode="outlined" 
-                    style={styles.moreChip}
-                    onPress={handleViewAllClients}
-                  >
-                    +{clients.length - 3} more
-                  </Chip>
-                )}
-              </View>
-            </View>
           </Card.Content>
         </Card>
 
-        <View style={styles.statsGrid}>
-          <StatCard 
-            title="Total Projects" 
-            value={dashboardData?.stats.total_projects || 0} 
-            subtitle="All projects"
-            color="#6366F1"
-          />
-          <StatCard 
-            title="Active" 
-            value={dashboardData?.stats.active_projects || 0} 
-            subtitle="In progress" 
-            color="#10B981"
-          />
-          <StatCard 
-            title="Completed" 
-            value={dashboardData?.stats.completed_projects || 0} 
-            subtitle="This year" 
-            color="#F59E0B"
-          />
-          <StatCard 
-            title="Overdue Tasks" 
-            value={dashboardData?.overdueTasks || 0} 
-            subtitle="Require attention" 
-            color="#EF4444"
-          />
-        </View>
+        {/* Show empty state if no data */}
+        {!dashboardData && !showBackendWarning && (
+          <Card style={styles.emptyState} elevation={2}>
+            <Card.Content style={styles.emptyState}>
+              <Text style={styles.emptyText}>Welcome to Cinga!</Text>
+              <Text style={styles.emptyText}>
+                Get started by creating your first project and assigning it to clients.
+              </Text>
+              <Button 
+                mode="contained" 
+                onPress={handleCreateProject}
+                style={styles.createFirstButton}
+              >
+                Create Your First Project
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
 
-        <Card style={styles.completionCard} elevation={2}>
-          <Card.Content>
-            <View style={styles.sectionHeader}>
-              <Title style={styles.sectionTitle}>Overall Progress</Title>
-              <Text style={styles.budgetText}>
-                Total Budget: R{dashboardData?.stats.total_budget?.toLocaleString() || '0'}
-              </Text>
+        {/* Only show stats if we have data */}
+        {dashboardData && (
+          <>
+            <View style={styles.statsGrid}>
+              <StatCard 
+                title="Total Projects" 
+                value={dashboardData.stats?.total_projects || 0} 
+                subtitle="All projects"
+                color="#6366F1"
+              />
+              <StatCard 
+                title="Active" 
+                value={dashboardData.stats?.active_projects || 0} 
+                subtitle="In progress" 
+                color="#10B981"
+              />
+              <StatCard 
+                title="Completed" 
+                value={dashboardData.stats?.completed_projects || 0} 
+                subtitle="This year" 
+                color="#F59E0B"
+              />
+              <StatCard 
+                title="Overdue Tasks" 
+                value={dashboardData.overdueTasks || 0} 
+                subtitle="Require attention" 
+                color="#EF4444"
+              />
             </View>
-            <View style={styles.completionContent}>
-              <Text style={styles.completionPercentage}>
-                {dashboardData?.stats.avg_completion || 0}%
-              </Text>
-              <Text style={styles.completionSubtitle}>
-                Average completion across {dashboardData?.stats.total_projects || 0} projects
-              </Text>
-            </View>
-            <ProgressBar 
-              progress={(dashboardData?.stats.avg_completion || 0) / 100} 
-              style={styles.completionBar}
-              color="#6366F1"
-            />
-          </Card.Content>
-        </Card>
+
+            <Card style={styles.completionCard} elevation={2}>
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <Title style={styles.sectionTitle}>Overall Progress</Title>
+                  <Text style={styles.budgetText}>
+                    Total Budget: R{dashboardData.stats?.total_budget?.toLocaleString() || '0'}
+                  </Text>
+                </View>
+                <View style={styles.completionContent}>
+                  <Text style={styles.completionPercentage}>
+                    {dashboardData.stats?.avg_completion || 0}%
+                  </Text>
+                  <Text style={styles.completionSubtitle}>
+                    Average completion across {dashboardData.stats?.total_projects || 0} projects
+                  </Text>
+                </View>
+                <ProgressBar 
+                  progress={(dashboardData.stats?.avg_completion || 0) / 100} 
+                  style={styles.completionBar}
+                  color="#6366F1"
+                />
+              </Card.Content>
+            </Card>
+          </>
+        )}
 
         <Card style={styles.projectsCard} elevation={2}>
           <Card.Content>
@@ -363,7 +394,12 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
 
             {recentProjects.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No projects created yet</Text>
+                <Text style={styles.emptyText}>
+                  {showBackendWarning 
+                    ? 'Cannot load projects - check backend connection' 
+                    : 'No projects created yet'
+                  }
+                </Text>
                 <Button 
                   mode="contained" 
                   onPress={handleCreateProject}
@@ -373,63 +409,56 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
                 </Button>
               </View>
             ) : (
-              recentProjects.map((project, index) => (
-                <Card 
-                  key={project.id} 
-                  style={[styles.projectItem, index !== recentProjects.length - 1 && styles.projectItemBorder]} 
-                  mode="elevated" 
-                  elevation={1}
-                >
-                  <Card.Content>
-                    <View style={styles.projectHeader}>
-                      <View style={styles.projectInfo}>
-                        <Text style={styles.projectName}>{project.title}</Text>
-                        <Text style={styles.clientName}>
-                          Client: {project.client || 'No client assigned'}
-                        </Text>
-                      </View>
-                      <View style={styles.projectStatus}>
-                        <View style={[styles.statusBadge, project.status === 'active' ? styles.statusActive : styles.statusCompleted]}>
-                          <Text style={styles.statusText}>{project.status?.toUpperCase() || 'ACTIVE'}</Text>
+              recentProjects.map((project, index) => {
+                // ✅ FIXED: Use fake progress based on status
+                const projectStatus = project.status || 'active';
+                const fakeProgress = getFakeProgressPercentage(projectStatus);
+                const progressValue = getProgressValue(projectStatus);
+                const progressColor = getProgressBarColor(projectStatus);
+
+                return (
+                  <Card 
+                    key={project.id} 
+                    style={[styles.projectItem, index !== recentProjects.length - 1 && styles.projectItemBorder]} 
+                    mode="elevated" 
+                    elevation={1}
+                  >
+                    <Card.Content>
+                      <View style={styles.projectHeader}>
+                        <View style={styles.projectInfo}>
+                          <Text style={styles.projectName}>{project.title}</Text>
+                          <Text style={styles.clientName}>
+                            Client: {project.client_name || project.client || 'No client assigned'}
+                          </Text>
                         </View>
                       </View>
-                    </View>
 
-                    <View style={styles.progressSection}>
-                      <View style={styles.progressHeader}>
-                        <Text style={styles.progressLabel}>Progress</Text>
-                        <Text style={styles.progressPercentage}>{project.progress || 0}%</Text>
+                      <View style={styles.progressSection}>
+                        <View style={styles.progressHeader}>
+                          <Text style={styles.progressLabel}>Progress</Text>
+                          <Text style={styles.progressPercentage}>{fakeProgress}%</Text>
+                        </View>
+                        {/* ✅ FIXED: Progress bar with fake values based on status */}
+                        <ProgressBar 
+                          progress={progressValue} 
+                          style={styles.progressBar}
+                          color={progressColor}
+                        />
                       </View>
-                      <ProgressBar 
-                        progress={(project.progress || 0) / 100} 
-                        style={styles.progressBar}
-                        color={(project.progress || 0) > 70 ? '#10B981' : (project.progress || 0) > 40 ? '#6366F1' : '#F59E0B'}
-                      />
-                    </View>
 
-                    <View style={styles.projectDetails}>
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Budget</Text>
-                        <Text style={styles.detailValue}>R{project.budget?.toLocaleString() || '0'}</Text>
-                      </View>
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Deadline</Text>
-                        <Text style={styles.detailValue}>{project.deadline || 'Not set'}</Text>
-                      </View>
-                    </View>
-
-                    <Button 
-                      mode="text" 
-                      icon="chevron-right"
-                      contentStyle={styles.viewDetailsContent}
-                      labelStyle={styles.viewDetailsLabel}
-                      onPress={() => handleViewProjectDetails(project)}
-                    >
-                      View Details
-                    </Button>
-                  </Card.Content>
-                </Card>
-              ))
+                      <Button 
+                        mode="text" 
+                        icon="chevron-right"
+                        contentStyle={styles.viewDetailsContent}
+                        labelStyle={styles.viewDetailsLabel}
+                        onPress={() => handleViewProjectDetails(project)}
+                      >
+                        View Details
+                      </Button>
+                    </Card.Content>
+                  </Card>
+                );
+              })
             )}
           </Card.Content>
         </Card>
@@ -449,7 +478,7 @@ const ManagerDashboard: React.FC<Props> = ({ navigation }) => {
   );
 };
 
-// CLEAN STYLES - NO DUPLICATES
+// ... (keep all the same styles)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
@@ -458,11 +487,12 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 16, color: '#64748B', marginBottom: 4 },
   userName: { fontSize: 24, fontWeight: 'bold', color: '#1E293B', marginBottom: 2 },
   userRole: { fontSize: 14, color: '#6366F1', fontWeight: '600' },
-  warningCard: { margin: 16, marginBottom: 8, borderRadius: 12, backgroundColor: '#FFFBEB', borderColor: '#F59E0B' },
+  warningCard: { margin: 16, marginBottom: 8, borderRadius: 12, backgroundColor: '#FEF2F2', borderColor: '#EF4444' },
   warningContent: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  warningText: { flex: 1, marginLeft: 8 },
-  warningTitle: { fontSize: 14, fontWeight: 'bold', color: '#92400E', marginBottom: 2 },
-  warningSubtitle: { fontSize: 12, color: '#92400E' },
+  warningText: { flex: 1, marginLeft: 8, marginRight: 12 },
+  warningTitle: { fontSize: 14, fontWeight: 'bold', color: '#DC2626', marginBottom: 2 },
+  warningSubtitle: { fontSize: 12, color: '#DC2626' },
+  retryButton: { backgroundColor: '#EF4444', borderRadius: 8 },
   quickActionsCard: { borderRadius: 16, backgroundColor: '#FFFFFF', margin: 16, marginTop: 0, marginBottom: 16 },
   quickActionsGrid: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   primaryActionButton: { flex: 1, borderRadius: 12, backgroundColor: '#6366F1' },
@@ -473,6 +503,7 @@ const styles = StyleSheet.create({
   clientsChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   clientChip: { backgroundColor: '#F8FAFC' },
   moreChip: { backgroundColor: '#E2E8F0' },
+  noClientsChip: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 16, paddingTop: 8 },
   statCard: { flex: 1, minWidth: (width - 64) / 2, borderRadius: 16, backgroundColor: '#FFFFFF' },
   statContent: { paddingVertical: 16, paddingHorizontal: 12, alignItems: 'center' },

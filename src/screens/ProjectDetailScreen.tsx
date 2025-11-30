@@ -1,10 +1,11 @@
-﻿import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Dimensions, Alert } from 'react-native';
-import { Card, Title, Text, Button, ProgressBar, Chip, IconButton, Snackbar } from 'react-native-paper';
+﻿import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, Dimensions, Alert, RefreshControl } from 'react-native';
+import { Card, Title, Text, Button, ProgressBar, Chip, IconButton, Snackbar, ActivityIndicator } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList, Project } from '../types';
 import AppHeader from '../components/AppHeader';
+import { projectService } from '../services/backendService';
 
 const { width } = Dimensions.get('window');
 
@@ -17,44 +18,177 @@ interface Props {
 }
 
 const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarVisible, setSnackbarVisible] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [project, setProject] = useState<Project>(route.params.project);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  const project = route.params.project;
-  const progressPercentage = typeof project.progress === 'number' ? project.progress : 0;
-  const daysLeft = Math.ceil((new Date(project.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  // Enhanced fetch with debug logging
+  const fetchProjectData = async (showLoader: boolean = true): Promise<void> => {
+    try {
+      if (showLoader) {
+        setRefreshing(true);
+      }
+      
+      console.log('🔄 Frontend: Fetching project ID:', project.id);
+      const projectData = await projectService.getProjectById(project.id);
+      
+      // Ensure is_archived is properly set as boolean
+      const updatedProject = {
+        ...projectData,
+        is_archived: Boolean(projectData.is_archived)
+      };
+      
+      console.log('🔍 Frontend: Received project data:', {
+        id: updatedProject.id,
+        title: updatedProject.title,
+        is_archived: updatedProject.is_archived
+      });
+      
+      setProject(updatedProject);
+    } catch (error) {
+      console.error('❌ Failed to fetch project:', error);
+      showSnackbar('Failed to refresh project data');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
-  const showSnackbar = (message: string) => {
+  // Better screen focus handling
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🎯 ProjectDetailScreen focused - refreshing data');
+      fetchProjectData(false);
+    }, [project.id])
+  );
+
+  // Enhanced refresh control
+  const onRefresh = (): void => {
+    setRefreshing(true);
+    fetchProjectData(false);
+  };
+
+  const progressPercentage: number = typeof project.progress === 'number' ? project.progress : 0;
+  const daysLeft: number = Math.ceil((new Date(project.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+
+  const showSnackbar = (message: string): void => {
     setSnackbarMessage(message);
     setSnackbarVisible(true);
   };
 
-  const handleUpdateProject = () => {
-    Alert.alert('Update Project', 'Project editing functionality coming soon!');
+  // 🆕 UPDATED: Navigate to Edit Project Screen
+  const handleUpdateProject = (): void => {
+    navigation.navigate('EditProjectScreen', { project });
+  };
+
+  // Archive functionality
+  const handleArchiveProject = async (): Promise<void> => {
+    Alert.alert(
+      'Archive Project',
+      'Are you sure you want to archive this project? It will be hidden from main lists but can be restored later.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Archive', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              console.log('🔄 Frontend: Archiving project:', project.id);
+              await projectService.archiveProject(project.id);
+              
+              console.log('✅ Frontend: Archive successful, updating local state');
+              // Update local state immediately
+              setProject(prev => {
+                const updated = { ...prev, is_archived: true };
+                console.log('🔍 Frontend: Local state updated to:', updated.is_archived);
+                return updated;
+              });
+              
+              showSnackbar('Project archived successfully!');
+              
+              // Navigate back to dashboard where archived projects are filtered out
+              setTimeout(() => {
+                navigation.navigate('ManagerDashboard');
+              }, 1500);
+              
+            } catch (error: any) {
+              console.error('Archive error:', error);
+              showSnackbar('Failed to archive project: ' + error.message);
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Unarchive functionality  
+  const handleUnarchiveProject = async (): Promise<void> => {
+    try {
+      setLoading(true);
+      console.log('🔄 Frontend: Unarchiving project:', project.id);
+      await projectService.unarchiveProject(project.id);
+        
+      console.log('✅ Frontend: Unarchive successful, updating local state');
+      // Update local state immediately
+      setProject(prev => {
+        const updated = { ...prev, is_archived: false };
+        console.log('🔍 Frontend: Local state updated to:', updated.is_archived);
+        return updated;
+      });
+      
+      showSnackbar('Project unarchived successfully!');
+      
+    } catch (error: any) {
+      console.error('Unarchive error:', error);
+      showSnackbar('Failed to unarchive project: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Navigation to separate screens
-  const handleOpenTasks = () => {
+  const handleOpenTasks = (): void => {
     navigation.navigate('TasksScreen', { project });
   };
 
-  const handleOpenBudget = () => {
+  const handleOpenBudget = (): void => {
     navigation.navigate('BudgetScreen', { project });
-  };
-
-  const handleOpenTrello = () => {
-    navigation.navigate('TrelloScreen', { project });
   };
 
   return (
     <>
       <AppHeader title="Project Details" />
       
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#6366F1']}
+            tintColor="#6366F1"
+          />
+        }
+      >
         {/* Header Section */}
-        <View style={styles.headerGradient}>
+        <View style={[
+          styles.headerGradient, 
+          project.is_archived && styles.archivedHeader
+        ]}>
           <Card.Content>
-            <Text style={styles.projectName}>{project.title}</Text>
+            <View style={styles.headerTopRow}>
+              <Text style={styles.projectName}>{project.title}</Text>
+              {project.is_archived && (
+                <Chip mode="flat" style={styles.archivedChip} textStyle={styles.archivedChipText}>
+                  📁 ARCHIVED
+                </Chip>
+              )}
+            </View>
             <Text style={styles.clientName}>Client: {project.client || 'No client assigned'}</Text>
             
             <View style={styles.progressBarContainer}>
@@ -89,6 +223,45 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           </Card.Content>
         </View>
 
+        {/* Archive/Unarchive Action Buttons */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.sectionTitle}>Project Actions</Title>
+            <View style={styles.actionButtons}>
+              {project.is_archived ? (
+                <Button 
+                  mode="contained" 
+                  onPress={handleUnarchiveProject}
+                  loading={loading}
+                  disabled={loading}
+                  style={styles.unarchiveButton}
+                  icon="archive-arrow-up"
+                  contentStyle={styles.actionButtonContent}
+                >
+                  {loading ? 'Unarchiving...' : 'Unarchive Project'}
+                </Button>
+              ) : (
+                <Button 
+                  mode="outlined" 
+                  onPress={handleArchiveProject}
+                  loading={loading}
+                  disabled={loading}
+                  style={styles.archiveButton}
+                  icon="archive"
+                  contentStyle={styles.actionButtonContent}
+                >
+                  {loading ? 'Archiving...' : 'Archive Project'}
+                </Button>
+              )}
+            </View>
+            {project.is_archived && (
+              <Text style={styles.archiveNote}>
+                📁 This project is archived and hidden from main lists. Clients cannot see archived projects.
+              </Text>
+            )}
+          </Card.Content>
+        </Card>
+
         {/* Quick Stats */}
         <View style={styles.infoContainer}>
           <View style={[styles.gradientInfoCard, styles.primaryGradient]}>
@@ -113,7 +286,7 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Actions - Disabled when archived */}
         <Card style={styles.card}>
           <Card.Content>
             <Title style={styles.sectionTitle}>Quick Actions</Title>
@@ -121,31 +294,35 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               <Button 
                 mode="contained" 
                 onPress={handleOpenTasks}
-                style={styles.quickActionButton}
+                style={[
+                  styles.quickActionButton,
+                  project.is_archived && styles.disabledButton
+                ]}
                 icon="format-list-checks"
                 contentStyle={styles.quickActionContent}
+                disabled={project.is_archived}
               >
                 Tasks
               </Button>
               <Button 
                 mode="contained" 
                 onPress={handleOpenBudget}
-                style={styles.quickActionButton}
+                style={[
+                  styles.quickActionButton,
+                  project.is_archived && styles.disabledButton
+                ]}
                 icon="cash"
                 contentStyle={styles.quickActionContent}
+                disabled={project.is_archived}
               >
                 Budget
               </Button>
-              <Button 
-                mode="contained" 
-                onPress={handleOpenTrello}
-                style={styles.quickActionButton}
-                icon="trello"
-                contentStyle={styles.quickActionContent}
-              >
-                Trello
-              </Button>
             </View>
+            {project.is_archived && (
+              <Text style={styles.disabledNote}>
+                ⚠️ Quick actions are disabled for archived projects
+              </Text>
+            )}
           </Card.Content>
         </Card>
 
@@ -184,10 +361,14 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               <Title style={styles.sectionTitle}>Project Details</Title>
               <Button 
                 mode="contained" 
-                style={styles.editButton}
+                style={[
+                  styles.editButton,
+                  project.is_archived && styles.disabledButton
+                ]}
                 onPress={handleUpdateProject}
                 icon="pencil"
                 labelStyle={styles.buttonLabel}
+                disabled={project.is_archived}
               >
                 Edit
               </Button>
@@ -218,6 +399,18 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                   {project.status?.toUpperCase() || 'ACTIVE'}
                 </Chip>
               </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Archive Status</Text>
+                <Chip 
+                  mode="flat"
+                  style={[
+                    styles.statusChip,
+                    project.is_archived ? styles.archivedStatus : styles.activeArchiveStatus
+                  ]}
+                >
+                  {project.is_archived ? '📁 ARCHIVED' : '✅ ACTIVE'}
+                </Chip>
+              </View>
             </View>
           </Card.Content>
         </Card>
@@ -230,6 +423,10 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         onDismiss={() => setSnackbarVisible(false)}
         duration={3000}
         style={styles.snackbar}
+        action={{
+          label: 'OK',
+          onPress: () => setSnackbarVisible(false),
+        }}
       >
         {snackbarMessage}
       </Snackbar>
@@ -237,7 +434,7 @@ const ProjectDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   );
 };
 
-// Clean, simplified styles
+// ✅ FIXED: Removed Trello button, cleaned shadows, improved borders and fonts
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -246,32 +443,52 @@ const styles = StyleSheet.create({
   headerGradient: {
     margin: 16,
     marginBottom: 12,
-    borderRadius: 20,
-    elevation: 8,
-    shadowColor: '#6c97cc',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    borderRadius: 12,
     backgroundColor: '#6c97cc',
+    borderWidth: 1,
+    borderColor: '#4B7BBD',
+    // Removed elevation and shadows
+  },
+  archivedHeader: {
+    backgroundColor: '#94A3B8',
+    borderColor: '#7C8A9C',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
   projectName: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginBottom: 4,
+    fontSize: 24,
+    fontWeight: '600',
     color: '#ffffff',
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    flex: 1,
+    marginRight: 12,
+    letterSpacing: 0.3,
+  },
+  archivedChip: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    height: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  archivedChipText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
   clientName: {
     fontSize: 16,
     color: '#e2e8f0',
     marginBottom: 16,
     fontWeight: '500',
+    letterSpacing: 0.2,
   },
   progressBarContainer: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 10,
+    borderRadius: 8,
     padding: 4,
     marginBottom: 12,
   },
@@ -289,10 +506,13 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     flex: 1,
     fontWeight: '500',
+    letterSpacing: 0.2,
   },
   projectStatus: {
     height: 32,
     backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   activeStatus: {
     backgroundColor: 'rgba(99, 102, 241, 0.3)',
@@ -303,6 +523,41 @@ const styles = StyleSheet.create({
   pendingStatus: {
     backgroundColor: 'rgba(245, 158, 11, 0.3)',
   },
+  // Archive Action Styles
+  actionButtons: {
+    marginBottom: 8,
+  },
+  archiveButton: {
+    borderColor: '#EF4444',
+    borderWidth: 1.5,
+    borderRadius: 8,
+  },
+  unarchiveButton: {
+    backgroundColor: '#10B981',
+    borderRadius: 8,
+  },
+  actionButtonContent: {
+    paddingVertical: 6,
+  },
+  archiveNote: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 8,
+    letterSpacing: 0.2,
+  },
+  disabledNote: {
+    fontSize: 12,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  disabledButton: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.6,
+  },
   infoContainer: {
     flexDirection: 'row',
     marginHorizontal: 16,
@@ -311,21 +566,21 @@ const styles = StyleSheet.create({
   },
   gradientInfoCard: {
     flex: 1,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    // Removed elevation and shadows
   },
   primaryGradient: {
     backgroundColor: '#6c97cc',
+    borderColor: '#4B7BBD',
   },
   successGradient: {
     backgroundColor: '#10b981',
+    borderColor: '#0D9C6F',
   },
   warningGradient: {
     backgroundColor: '#f59e0b',
+    borderColor: '#D38A09',
   },
   gradientCardContent: {
     paddingVertical: 16,
@@ -336,26 +591,29 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     marginBottom: 6,
+    letterSpacing: 0.2,
   },
   gradientInfoValue: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '600',
     color: '#ffffff',
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    letterSpacing: 0.3,
   },
   card: {
     margin: 16,
     marginBottom: 0,
     borderRadius: 12,
-    elevation: 2,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    // Removed elevation
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#1E293B',
     marginBottom: 16,
+    letterSpacing: 0.3,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -368,6 +626,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#475569',
     fontWeight: '500',
+    letterSpacing: 0.2,
   },
   quickActionsGrid: {
     flexDirection: 'row',
@@ -377,6 +636,8 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     backgroundColor: '#6c97cc',
+    borderWidth: 1,
+    borderColor: '#4B7BBD',
   },
   quickActionContent: {
     paddingVertical: 8,
@@ -393,11 +654,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   progressPercentage: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#1E293B',
+    letterSpacing: 0.2,
   },
   detailsGrid: {
     gap: 12,
@@ -414,35 +677,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   detailValue: {
     fontSize: 14,
     color: '#1E293B',
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   statusChip: {
     height: 28,
+    borderWidth: 1,
   },
   statusActive: {
     backgroundColor: '#E0E7FF',
+    borderColor: '#6366F1',
   },
   statusCompleted: {
     backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
   },
   statusPending: {
     backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  archivedStatus: {
+    backgroundColor: '#FECACA',
+    borderColor: '#EF4444',
+  },
+  activeArchiveStatus: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
   },
   editButton: {
     backgroundColor: '#6c97cc',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4B7BBD',
   },
   buttonLabel: {
     fontWeight: '600',
     fontSize: 13,
+    letterSpacing: 0.2,
   },
   snackbar: {
     backgroundColor: '#1E293B',
-    borderRadius: 12,
+    borderRadius: 8,
     marginBottom: 20,
   },
 });

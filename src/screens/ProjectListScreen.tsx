@@ -28,26 +28,30 @@ const ProjectListScreen: React.FC<Props> = ({ navigation }) => {
   }, [user]);
 
   const loadProjects = async () => {
-    try {
-      setLoading(true);
-      if (!user) return;
+  try {
+    setLoading(true);
+    if (!user) return;
 
-      let projectsData: Project[] = [];
-      
-      if (user.role === 'manager') {
-        projectsData = await projectService.getManagerProjects(user.id);
-      } else {
-        projectsData = await projectService.getClientProjects(user.id);
-      }
-
-      setProjects(projectsData);
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    let projectsData: Project[] = [];
+    
+    if (user.role === 'manager') {
+      // FIXED: Convert user.id to string
+      const response = await projectService.getManagerProjects(user.id.toString()); // ✅ FIXED
+      projectsData = response; // This is already the data array
+    } else {
+      // FIXED: Convert user.id to string  
+      const response = await projectService.getClientProjects(user.id.toString()); // ✅ FIXED
+      projectsData = response.data; // This needs .data
     }
-  };
+
+    setProjects(projectsData);
+  } catch (error) {
+    console.error('Failed to load projects:', error);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   const onRefresh = () => {
     setRefreshing(true);

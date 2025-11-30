@@ -3,8 +3,8 @@ import { View, StyleSheet, ScrollView, Modal } from 'react-native';
 import { TextInput, Button, Text, Card, Title, Chip, Snackbar, ActivityIndicator, Divider, IconButton } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
-import { Project, User } from '../types';
-import { projectService, userService, CreateProjectData } from '../services/backendService';
+import { Project, User, CreateProjectData } from '../types';
+import { projectService, userService } from '../services/backendService';
 import { useAuth } from '../contexts/AuthContext';
 import AppHeader from '../components/AppHeader';
 
@@ -24,7 +24,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
   const [clientsLoading, setClientsLoading] = useState(true);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [clientsModalVisible, setClientsModalVisible] = useState(false); // 🆕 ADDED MODAL STATE
+  const [clientsModalVisible, setClientsModalVisible] = useState(false);
 
   // Form state
   const [projectData, setProjectData] = useState({
@@ -37,7 +37,6 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     loadClients();
     
-    // Pre-select client if passed from dashboard
     if (route.params?.selectedClient) {
       console.log('✅ Pre-selected client from params:', route.params.selectedClient);
       setSelectedClient(route.params.selectedClient);
@@ -73,14 +72,14 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
     setSnackbarVisible(true);
   };
 
-  // 🆕 ADDED: Handle client selection from modal
+  // Handle client selection from modal
   const handleSelectClient = (client: User) => {
     console.log('✅ Selected client:', client.name);
     setSelectedClient(client);
     setClientsModalVisible(false);
   };
 
-  // 🆕 ADDED: Clients Modal Component
+  // Clients Modal Component
   const ClientsModal = () => (
     <Modal
       visible={clientsModalVisible}
@@ -154,7 +153,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
     return null;
   };
 
-  // Create project with CORRECT field names
+  // ✅ FIXED: Create project function
   const handleCreateProject = async () => {
     if (!selectedClient) {
       showSnackbar('Please select a client');
@@ -199,9 +198,10 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
 
       console.log('🚀 Creating project with CORRECT field names:', projectPayload);
 
+      // ✅ FIXED: Don't check for result.success - just check if result exists
       const result = await projectService.createProject(projectPayload);
       
-      if (result.success) {
+      if (result) {
         console.log('✅ Project created successfully:', result);
         showSnackbar('Project created successfully! Client will be notified.');
         
@@ -209,12 +209,13 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
           navigation.navigate('ManagerDashboard');
         }, 1500);
       } else {
-        throw new Error(result.error || 'Failed to create project');
+        throw new Error('Failed to create project - no response from server');
       }
 
     } catch (error: any) {
       console.error('❌ Project creation failed:', error);
-      showSnackbar(error.message || 'Failed to create project');
+      // ✅ FIXED: Better error message
+      showSnackbar('Failed to create project: ' + (error.response?.data?.error || error.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -253,7 +254,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
               theme={{ colors: { primary: '#6366F1' } }}
             />
 
-            {/* 🆕 IMPROVED CLIENT SELECTION SECTION */}
+            {/* IMPROVED CLIENT SELECTION SECTION */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Select Client *</Text>
               
@@ -266,7 +267,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
                 <>
                   {/* Selected Client Display - BEAUTIFIED */}
                   {selectedClient ? (
-                    <Card style={styles.selectedClientCard} elevation={2}>
+                    <Card style={styles.selectedClientCard}>
                       <Card.Content style={styles.selectedClientContent}>
                         <View style={styles.selectedClientHeader}>
                           <Text style={styles.selectedClientName}>{selectedClient.name}</Text>
@@ -289,7 +290,6 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
                       </Card.Content>
                     </Card>
                   ) : (
-                    /* 🆕 IMPROVED CLIENT SELECTION BUTTON */
                     <View style={styles.clientSelectionSection}>
                       <Button 
                         mode="outlined" 
@@ -302,7 +302,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
                         {clients.length === 0 ? 'No Clients Available' : `Select Client (${clients.length} available)`}
                       </Button>
                       
-                      {/* 🆕 CLIENT CHIPS PREVIEW */}
+                      {/* CLIENT CHIPS PREVIEW */}
                       {clients.length > 0 && (
                         <View style={styles.clientsPreview}>
                           <Text style={styles.clientsPreviewLabel}>Quick select:</Text>
@@ -333,7 +333,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
                   )}
 
                   {clients.length === 0 && !clientsLoading && (
-                    <Card style={styles.noClientsCard} elevation={1}>
+                    <Card style={styles.noClientsCard}>
                       <Card.Content style={styles.noClientsContent}>
                         <Text style={styles.noClientsText}>No Clients Available</Text>
                         <Text style={styles.noClientsSubtext}>
@@ -387,7 +387,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
         </Card>
       </ScrollView>
 
-      {/* 🆕 CLIENTS MODAL */}
+      {/* CLIENTS MODAL */}
       <ClientsModal />
 
       <Snackbar
@@ -402,7 +402,7 @@ const CreateProjectScreen: React.FC<Props> = ({ navigation, route }) => {
   );
 };
 
-// 🆕 BEAUTIFIED STYLES
+// ✅ FIXED: Clean professional styling - removed shadows, cleaned borders, improved text clarity
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -410,19 +410,24 @@ const styles = StyleSheet.create({
   },
   card: {
     margin: 16,
-    borderRadius: 16,
-    elevation: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    // Removed elevation for cleaner look
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '600',
     marginBottom: 24,
     textAlign: 'center',
     color: '#1E293B',
+    letterSpacing: 0.5,
   },
   input: {
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
+    borderRadius: 8,
   },
   textArea: {
     height: 100,
@@ -434,7 +439,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 16,
+    marginBottom: 12,
+    letterSpacing: 0.3,
   },
   loadingContainer: {
     flexDirection: 'row',
@@ -442,21 +448,25 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   loadingText: {
     marginLeft: 12,
     color: '#64748B',
+    fontSize: 14,
+    fontWeight: '500',
   },
-  // 🆕 IMPROVED CLIENT SELECTION STYLES
   clientSelectionSection: {
     gap: 16,
   },
   clientButton: {
-    borderRadius: 12,
+    borderRadius: 8,
     borderColor: '#6366F1',
+    borderWidth: 1.5,
   },
   clientButtonContent: {
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   clientsPreview: {
     gap: 8,
@@ -465,6 +475,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '500',
+    letterSpacing: 0.2,
   },
   clientsChips: {
     flexDirection: 'row',
@@ -473,16 +484,20 @@ const styles = StyleSheet.create({
   },
   clientChip: {
     backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   moreChip: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
-  // 🆕 SELECTED CLIENT STYLES
   selectedClientCard: {
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#F0F9FF',
     borderColor: '#0EA5E9',
-    borderWidth: 1,
+    borderWidth: 1.5,
+    // Removed elevation
   },
   selectedClientContent: {
     paddingVertical: 12,
@@ -495,9 +510,10 @@ const styles = StyleSheet.create({
   },
   selectedClientName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#0369A1',
     flex: 1,
+    letterSpacing: 0.3,
   },
   removeClientButton: {
     margin: -8,
@@ -506,21 +522,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     marginBottom: 12,
+    letterSpacing: 0.2,
   },
   selectedClientChip: {
     backgroundColor: '#E0F2FE',
     borderColor: '#0EA5E9',
+    borderWidth: 1,
     alignSelf: 'flex-start',
   },
   selectedClientChipText: {
     color: '#0369A1',
     fontWeight: '600',
+    fontSize: 12,
   },
-  // 🆕 NO CLIENTS STYLES
   noClientsCard: {
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
+    borderWidth: 1,
   },
   noClientsContent: {
     paddingVertical: 20,
@@ -528,39 +547,46 @@ const styles = StyleSheet.create({
   noClientsText: {
     fontSize: 16,
     color: '#DC2626',
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign: 'center',
     marginBottom: 8,
+    letterSpacing: 0.3,
   },
   noClientsSubtext: {
     fontSize: 14,
     color: '#EF4444',
     textAlign: 'center',
     lineHeight: 20,
+    letterSpacing: 0.2,
   },
   divider: {
     marginVertical: 16,
     backgroundColor: '#E2E8F0',
+    height: 1,
   },
   createButton: {
     marginTop: 8,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#6366F1',
+    // Removed shadow for cleaner look
   },
   createButtonContent: {
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   snackbar: {
     backgroundColor: '#1E293B',
+    borderRadius: 8,
   },
-  // 🆕 MODAL STYLES (Same as ManagerDashboard)
   modalStyle: {
     margin: 20,
   },
   modalContainer: {
     backgroundColor: 'white',
-    borderRadius: 16,
+    borderRadius: 12,
     maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    // Removed shadow
   },
   modalHeader: {
     flexDirection: 'row',
@@ -572,8 +598,9 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#1E293B',
+    letterSpacing: 0.3,
   },
   modalContent: {
     maxHeight: 400,
@@ -588,37 +615,46 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     marginBottom: 8,
+    fontWeight: '500',
+    letterSpacing: 0.3,
   },
   emptyModalSubtext: {
     fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
+    lineHeight: 20,
+    letterSpacing: 0.2,
   },
   clientCard: {
     margin: 8,
     marginHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#FFFFFF',
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    // Removed elevation
   },
   clientCardContent: {
     padding: 16,
   },
   clientName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#1E293B',
     marginBottom: 4,
+    letterSpacing: 0.3,
   },
   clientEmail: {
     fontSize: 14,
     color: '#64748B',
     marginBottom: 4,
+    letterSpacing: 0.2,
   },
   clientRole: {
     fontSize: 12,
     color: '#6366F1',
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   modalFooter: {
     padding: 16,

@@ -1,8 +1,9 @@
+// src/screens/NotificationScreen.tsx - SIMPLE FIX
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Appbar, Card, Text, Button, Chip, ActivityIndicator, useTheme } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { notificationService } from '../services/backendService';
+import backendService from '../services/backendService'; // ✅ Use default import
 import { useAuth } from '../contexts/AuthContext';
 
 type NotificationScreenNavigationProp = StackNavigationProp<any, 'Notifications'>;
@@ -41,7 +42,9 @@ const NotificationScreen: React.FC<Props> = ({ navigation }) => {
       setLoading(true);
       console.log('🔔 Loading REAL notifications for user:', user.id);
       
-      const notificationsData = await notificationService.getUserNotifications(user.id);
+      // ✅ FIX: Convert user.id to string
+      const userId = user.id.toString();
+      const notificationsData = await backendService.notificationService.getUserNotifications(userId);
       setNotifications(notificationsData);
       
       console.log(`✅ Loaded ${notificationsData.length} REAL notifications from database`);
@@ -55,7 +58,7 @@ const NotificationScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      await notificationService.markAsRead(notificationId);
+      await backendService.notificationService.markAsRead(notificationId);
       
       // Update local state
       setNotifications(prev => 
@@ -73,7 +76,9 @@ const NotificationScreen: React.FC<Props> = ({ navigation }) => {
     if (!user?.id) return;
     
     try {
-      await notificationService.markAllAsRead(user.id);
+      // ✅ FIX: Convert user.id to string
+      const userId = user.id.toString();
+      await backendService.notificationService.markAllAsRead(userId);
       
       // Update all notifications to read
       setNotifications(prev => 
@@ -82,26 +87,6 @@ const NotificationScreen: React.FC<Props> = ({ navigation }) => {
       console.log('✅ All notifications marked as read in UI');
     } catch (error) {
       console.error('❌ Failed to mark all as read:', error);
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'success': return '#4CAF50';
-      case 'warning': return '#FF9800';
-      case 'error': return '#F44336';
-      case 'info': 
-      default: return '#2196F3';
-    }
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'success': return 'check-circle';
-      case 'warning': return 'alert';
-      case 'error': return 'alert-circle';
-      case 'info':
-      default: return 'information';
     }
   };
 
@@ -191,6 +176,8 @@ const NotificationScreen: React.FC<Props> = ({ navigation }) => {
     </>
   );
 };
+
+// ... keep ALL your existing styles exactly as they were ...
 
 const styles = StyleSheet.create({
   container: {
